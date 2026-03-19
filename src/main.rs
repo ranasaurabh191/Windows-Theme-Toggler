@@ -3,7 +3,7 @@
 mod theme;
 
 use std::time::{Duration, Instant};
-use image::{ImageReader, RgbaImage, imageops};
+use image::{RgbaImage, imageops};
 use tray_icon::{
     TrayIconBuilder, TrayIconEvent,
     MouseButton, MouseButtonState,
@@ -19,20 +19,13 @@ use windows_sys::Win32::UI::WindowsAndMessaging::{
 const FRAME_COUNT: usize = 8;
 const FRAME_MS:    u64   = 16;
 
-fn exe_dir() -> std::path::PathBuf {
-    std::env::current_exe()
-        .expect("Cannot get exe path")
-        .parent()
-        .expect("Cannot get exe directory")
-        .to_path_buf()
-}
+// Icons are baked INTO the exe at compile time — no external files needed
+static DARK_PNG:  &[u8] = include_bytes!("../assets/dark.png");
+static LIGHT_PNG: &[u8] = include_bytes!("../assets/light.png");
 
-fn load_rgba(filename: &str) -> RgbaImage {
-    let path = exe_dir().join("assets").join(filename);
-    let img = ImageReader::open(&path)
-        .unwrap_or_else(|e| panic!("Cannot open {}: {}", path.display(), e))
-        .decode()
-        .expect("Failed to decode PNG")
+fn load_rgba_from_bytes(bytes: &[u8]) -> RgbaImage {
+    let img = image::load_from_memory(bytes)
+        .expect("Failed to decode embedded icon")
         .to_rgba8();
     imageops::resize(&img, 32, 32, imageops::FilterType::Lanczos3)
 }
@@ -46,7 +39,7 @@ fn to_tray_icon(img: &RgbaImage) -> tray_icon::Icon {
 fn blend(from: &RgbaImage, to: &RgbaImage, t: f32) -> RgbaImage {
     let (w, h) = from.dimensions();
     let mut out = RgbaImage::new(w, h);
-    let t = t * t * (3.0 - 2.0 * t); // smoothstep easing
+    let t = t * t * (3.0 - 2.0 * t);
     for (x, y, px) in out.enumerate_pixels_mut() {
         let a = from.get_pixel(x, y).0;
         let b = to.get_pixel(x, y).0;
@@ -76,8 +69,9 @@ struct Anim {
 }
 
 fn main() {
-    let dark_img  = load_rgba("dark.png");
-    let light_img = load_rgba("light.png");
+    // Load icons from embedded bytes — no files needed on disk
+    let dark_img  = load_rgba_from_bytes(DARK_PNG);
+    let light_img = load_rgba_from_bytes(LIGHT_PNG);
 
     let menu      = Menu::new();
     let quit_item = MenuItem::new("Quit", true, None);
@@ -87,7 +81,7 @@ fn main() {
     let current      = get_current_theme();
     let initial_icon = to_tray_icon(icon_for_theme(&current, &dark_img, &light_img));
 
-    let tray = TrayIconBuilder::new()
+    let mut tray = TrayIconBuilder::new()
         .with_menu(Box::new(menu))
         .with_menu_on_left_click(false)
         .with_tooltip("Click to switch theme")
@@ -95,9 +89,8 @@ fn main() {
         .build()
         .expect("Failed to create tray icon");
 
-    let mut tray = tray;
-    let tray_rx  = TrayIconEvent::receiver();
-    let menu_rx  = MenuEvent::receiver();
+    let tray_rx = TrayIconEvent::receiver();
+    let menu_rx = MenuEvent::receiver();
     let mut anim: Option<Anim> = None;
 
     unsafe {
