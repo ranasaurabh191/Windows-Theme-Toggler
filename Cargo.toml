@@ -1,0 +1,18 @@
+[package]
+name = "dark-toggle"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+tray-icon = "0.20.1"
+winreg    = "0.56"
+image     = { version = "0.25", default-features = false, features = ["png"] }
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.59", features = [
+    "Win32_UI_WindowsAndMessaging",
+    "Win32_Foundation",
+] }
+
+[build-dependencies]
+winres = "0.1"
